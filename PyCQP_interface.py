@@ -1,22 +1,18 @@
-#! /usr/bin/python
-# coding: iso-8859-1
+#! /usr/bin/env python
+# -*- coding: utf-8 -*-
 
 # Name of this module: PyCQP
 # Version 2.0 (Febr. 2008)
 # Joerg Asmussen, DSL
-# some changes by Yannick Versley
-from __future__ import print_function
 
 # Import external standard Python modules used by this module:
-from __future__ import print_function
 import sys
 import os
 import re
 import random
-import string
 import time
 from six.moves import _thread as thread
-
+import tempfile
 
 # Modules for running CQP as child process and pipe i/o
 # (standard in newer Python):
@@ -31,26 +27,29 @@ cMaxRequestProcTime = 40  # max secs for processing a user request
 
 
 class ErrCQP:
+    """Handle CQP error message."""
 
     def __init__(self, msg):
+        """Class constructor."""
         self.msg = msg.rstrip()
 
 
 class ErrKilled:
+    """Handle errors when process is killed."""
 
     def __init__(self, msg):
+        """Class constructor."""
         self.msg = msg.rstrip()
 
 
 class CQP:
-
-    """
-    Wrapper for CQP.
-    """
+    """Wrapper for CQP."""
 
     def _progressController(self):
-        """
+        """Control the progess.
+
         CREATED: 2008-02
+
         This method is run as a thread.
         At certain intervals (cProgressControlCycle), it controls how long the
         CQP process of the current user has spent on processing this user's
@@ -60,11 +59,12 @@ class CQP:
         self.runController = True
         while self.runController:
             time.sleep(cProgressControlCycle)
-            if self.execStart != None:
-                if time.time() - self.execStart > \
-                        cMaxRequestProcTime * self.maxProcCycles:
+            if self.execStart is not None:
+                if time.time() - self.execStart > cMaxRequestProcTime *\
+                 self.maxProcCycles:
                     print(
-                        '''WARNING!: PROGRESS CONTROLLER IDENTIFIED BLOCKING CQP PROCESS ID {}'''.format(self.CQP_process.pid), end='')
+                        '''WARNING!: PROGRESS CONTROLLER IDENTIFIED BLOCKING CQP
+                        PROCESS ID {}'''.format(self.CQP_process.pid), end='')
                     # os.kill(self.CQP_process.pid, SIGKILL) - doesn't work!
                     os.popen("kill -9 " + str(self.CQP_process.pid))  # works!
                     print("=> KILLED!")
@@ -72,10 +72,11 @@ class CQP:
                     break
 
     def __init__(self, bin=None, options=''):
+        """Class constructor."""
         self.execStart = time.time()
         self.maxProcCycles = 1.0
         # start CQP as a child process of this wrapper
-        if bin == None:
+        if bin is None:
             print("ERROR: Path to CQP binaries undefined", file=sys.stderr)
             sys.exit(1)
         self.CQP_process = subprocess.Popen(bin + ' ' + options,
@@ -83,15 +84,16 @@ class CQP:
                                             stdin=subprocess.PIPE,
                                             stdout=subprocess.PIPE,
                                             stderr=subprocess.PIPE,
+                                            universal_newlines=True,
                                             close_fds=True)
         self.CQPrunning = True
         thread.start_new_thread(self._progressController, ())
         # "cqp -c" should print version on startup:
         version_string = self.CQP_process.stdout.readline()
         version_string = version_string.rstrip()  # Equivalent to Perl's chomp
+        self.CQP_process.stdout.flush()
         print(version_string, file=sys.stderr)
-        version_regexp = re.compile(
-            r'^CQP\s+(?:\w+\s+)*([0-9]+)\.([0-9]+)(?:\.b?([0-9]+))?(?:\s+(.*))?$')
+        version_regexp = re.compile(r'^CQP\s+(?:\w+\s+)*([0-9]+)\.([0-9]+)(?:\.b?([0-9]+))?(?:\s+(.*))?$')
         match = version_regexp.match(version_string)
         if not match:
             print("ERROR: CQP backend startup failed", file=sys.stderr)
@@ -103,12 +105,14 @@ class CQP:
 
         # We need cqp-2.2.b41 or newer (for query lock):
         if not (
-            self.major_version >= 3
-            or (self.major_version == 2
-                and self.minor_version == 2
-                and self.beta_version >= 41)
-        ):
-            print("ERROR: CQP version too old: " + version_string, file=sys.stderr)
+                self.major_version >= 3 or
+                (self.major_version == 2 and
+                    self.minor_version == 2 and
+                    self.beta_version >= 41)
+                ):
+            print(
+                "ERROR: CQP version too old: " + version_string,
+                file=sys.stderr)
             sys.exit(1)
 
         # Error handling:
@@ -125,18 +129,18 @@ class CQP:
         self.execStart = None
 
     def Terminate(self):
-        """
-        Terminate controller thread, must be called before deleting CQP
-        """
+        """Terminate controller thread, must be called before deleting CQP."""
         self.execStart = None
         self.runController = False
 
     def SetProcCycles(self, procCycles):
+        """Set procCycles."""
         print("    Setting procCycles to {}".format(procCycles))
         self.maxProcCycles = procCycles
         return int(self.maxProcCycles * cMaxRequestProcTime)
 
     def __del__(self):
+        """Stop running CQP instance."""
         if self.CQPrunning:
             # print "Deleting CQP with pid", self.CQP_process.pid, "...",
             self.CQPrunning = False
@@ -150,8 +154,8 @@ class CQP:
             # print "Finished"
 
     def Exec(self, cmd):
-        """
-        Executes CQP command.
+        """Execute CQP command.
+
         The method takes as input a command string and sends it
         to the CQP child process
         """
@@ -173,38 +177,39 @@ class CQP:
         # strings which then are to be structured by the client module.
         # The server does not emit pickled data according to some
         # language dependent protocol.
-        result = ''
+        self.CQP_process.stdin.flush()
+        result = []
         while self.CQPrunning:
             ln = self.CQP_process.stdout.readline()
             ln = ln.strip()  # strip off whitespace from start and end of line
             if re.match(r'-::-EOL-::-', ln):
                 if self.debug:
-                    print("CQP "+"-" * 60)
+                    print("CQP " + "-" * 60)
                 break
             if self.debug:
-                print("CQP >> "+ln)
+                print("CQP >> " + ln)
             if ln != '':
-                result = result + ln + '\n'
-        result = result.rstrip()  # strip off whitespace from EOL (\n)
+                result.append(ln)
+            self.CQP_process.stdout.flush()
         self.Checkerr()
         self.execStart = None
+        result = '\n'.join(result)
+        result = result.rstrip()  # strip off whitespace from EOL (\n)
         return result
 
     def Query(self, query):
-        """
-        Executes query in safe mode (query lock)
-        """
+        """Execute query in safe mode (query lock)."""
         result = []
         key = str(random.randint(1, 1000000))
         errormsg = ''  # collect CQP error messages AS STRING
-        ok = True	  # check if any error occurs
+        ok = True      # check if any error occurs
         self.Exec('set QueryLock ' + key)  # enter query lock mode
         if self.status != 'ok':
             errormsg = errormsg + self.error_message
             ok = False
         result = self.Exec(query)
         if self.status != 'ok':
-            errormsg = errormsg + self.error_message
+            errormsg = errormsg + self.error_message.decode('utf-8')
             ok = ok and False
         self.Exec('unlock ' + key)  # unlock with random key
         if self.status != 'ok':
@@ -219,37 +224,51 @@ class CQP:
         return result
 
     def Dump(self, subcorpus='Last', first=None, last=None):
-        """
-        Dumps named query result into table of corpus positions
-        """
-        if first != None and last == None:
-            last = first
-        elif last != None and first == None:
-            first = last
-        if first != None:
-            first = str(first)
-            last = str(last)
-            regexp = re.compile(r'^[0-9]+$')
-            if (not regexp.match(first)) or (not regexp.match(last)):
-                print(
-                    "ERROR: Invalid value for first ({}) or last ({}) line in Dump() method".format(first, last), file=sys.stderr)
+        """Dump named query result into table of corpus positions."""
+        if first is None and last is None:
+            result = self.Exec('dump ' + subcorpus + ";")
+        elif ((not isinstance(first, int) and first is not None) or
+                (not isinstance(last, int) and last is not None)):
+            sys.stderr.write(
+                            "ERROR: Invalid value for first (" +
+                            str(first) + ") or last (" + str(last) +
+                            ") line in Dump() method\n")
+            sys.exit(1)
+        elif isinstance(first, int) and isinstance(last, int):
+            if first > last:
+                sys.stderr.write(
+                    "ERROR: Invalid value for first line (first = " +
+                    str(first) + " > last = " + str(last) +
+                    ") in Dump() method\n")
                 sys.exit(1)
+            else:
+                result = self.Exec(
+                    'dump ' +
+                    subcorpus +
+                    " " +
+                    str(first) +
+                    " " +
+                    str(last))
         else:
-            first=last=''
-        matches = []
-        result = re.split(r'\n', self.Exec('dump ' + subcorpus +
-                                           " " + first + " " + last))
-        for line in result:
-            matches.append(re.split(r'\t', line))
-        return matches
+            if first is not None and last is None:
+                last = first
+            elif last is not None and first is None:
+                first = last
+            result = self.Exec(
+                'dump ' +
+                subcorpus +
+                " " +
+                str(first) +
+                " " +
+                str(last) +
+                ";")
+        result = [x.split('\t') for x in result.split('\n')]
+        return result
 
     def Undump(self, subcorpus='Last', table=[]):
-        """
-        Undumps named query result from table of corpus positions
-        """
+        """Undump named query result from table of corpus positions."""
         wth = ''  # undump with target and keyword
-        n_el = None  # number of anchors for each match
-                    # (will be determined from first row)
+        n_el = None  # number of anchors for each match (from first row)
         n_matches = len(table)  # number of matches (= remaining arguments)
         # We have to read undump table from temporary file:
         tf = tempfile.NamedTemporaryFile(prefix='pycqp_undump_')
@@ -257,37 +276,38 @@ class CQP:
         tf.write(str(n_matches) + '\n')
         for row in table:
             row_el = len(row)
-            if n_el == None:
+            if n_el is None:
                 n_el = row_el
                 if (n_el < 2) or (n_el > 4):
                     print(
-                        "ERROR: Row arrays in undump table must have " + \
-                        "between 2 and 4 elements (first row has " + \
-                        str(n_el) + " elements)",
-                        file=sys.stderr)
+                        "ERROR: Row arrays in undump table must have " +
+                        "between 2 and 4 elements (first row has " +
+                        str(n_el) + " elements)", file=sys.stderr)
                     sys.exit(1)
                 if n_el >= 3:
                     wth = 'with target'
                 if n_el == 4:
                     wth = wth + ' keyword'
             elif row_el != n_el:
-                print (
-                    "ERROR: All rows in undump table must have the same " + \
-                    "length (first row = " + str(n_el) + ", this row = " + \
-                    str(row_el) + ")", file=sys.sterr)
+                print(
+                    "ERROR: All rows in undump table must have the same " +
+                    "length (first row = " + str(n_el) + ", this row = " +
+                    str(row_el) + ")", file=sys.stderr)
                 sys.exit(1)
-            tf.write(string.join(row, '\t') + '\n')
+            tf.write('\t'.join(row) + '\n')
         tf.close()
         # Send undump command with filename of temporary file:
         self.Exec("undump " + subcorpus + " " + wth + " < '" + filename + "'")
         tf.delete()
+        pass
 
     def Group(self, subcorpus='Last',
               spec1='match.word', spec2='', cutoff='1'):
-        """
-        Computes frequency distribution over attribute values
-        (single values or pairs) using group command;
-        note that the arguments are specified in the logical order,
+        """Compute frequency distribution over attribute values.
+
+        (single values or pairs) using group command.
+
+        Note that the arguments are specified in the logical order,
         in contrast to "group"
         """
         spec2_regexp = re.compile(r'^[0-9]+$')
@@ -295,8 +315,8 @@ class CQP:
             cutoff = spec2
             spec2 = ''
         spec_regexp = re.compile(
-            r'^(match|matchend|target[0-9]?|keyword)\.([A-Za-z0-9_-]+)$')
-        match = spec_regexp.match(spec1)
+          r'^(match|matchend|target[0-9]?|keyword)\.([A-Za-z0-9_-]+)$')
+        match = re.match(spec_regexp, spec1)
         if not match:
             print(
                 "ERROR: Invalid key '" + spec1 + "' in Group() method",
@@ -304,7 +324,7 @@ class CQP:
             sys.exit(1)
         spec1 = match.group(1) + ' ' + match.group(2)
         if spec2 != '':
-            match = spec_regexp(spec2)
+            match = re.match(spec_regexp, spec2)
             if not match:
                 print(
                     "ERROR: Invalid key '" + spec2 + "' in Group() method",
@@ -312,43 +332,37 @@ class CQP:
                 sys.exit(1)
             spec2 = match.group(1) + ' ' + match.group(2)
             cmd = 'group ' + subcorpus + ' ' + spec2 + ' by ' + spec1 + \
-                ' cut ' + cutoff
+                  ' cut ' + cutoff
         else:
             cmd = 'group ' + subcorpus + ' ' + spec1 + ' cut ' + cutoff
         result = self.Exec(cmd)
-        rows = []
-        for line in result:
-            rows.append(re.split(r'\t', line))
-        return rows
+        return result
 
     def Count(self, subcorpus='Last', sort_clause=None, cutoff=1):
+        """Compute frequency distribution for match strings.
+
+        Based on sort clause.
         """
-        Computes frequency distribution for match strings,
-        based on sort clause
-        """
-        if sort_clause == None:
+        if sort_clause is None:
             print(
                 "ERROR: Parameter 'sort_clause' undefined in Count() method",
                 file=sys.stderr)
             sys.exit(1)
-        return self.Exec('count ' + subcorpus + ' ' + sort_clause +
-                         ' cut ' + str(cutoff))
-# We don't want to return a data structure other than a string in order to
-# send it across a server line without pickling.
-# The work of structuring the data must be done by the client part
-#		  rows = []
-#		  for line in result:
-#			  size, first, string = re.split(r'\t', line)
-#			  rows.append([size, string, first, int(first) + int(size) - 1])
-#		  return rows
+        return self.Exec(
+            'count ' +
+            subcorpus +
+            ' by ' +
+            sort_clause +
+            ' cut ' +
+            str(cutoff))
 
     def Checkerr(self):
-        """
-        Checks CQP's stderr stream for error messages
-        (returns true if there was an error)
+        """Check CQP's stderr stream for error messages.
+
+        (returns true if there was an error).
         OBS! In CQP.pm the error_message is stored in a list,
         In PyCQP_interface.pm we use a string (which better can be sent
-        accross the server line)
+        accross the server line).
         """
         ready = select.select([self.errpipe], [], [], 0)
         if self.errpipe in ready[0]:
@@ -358,57 +372,45 @@ class CQP:
         return not self.Ok()
 
     def Readerr(self):
-        """
-        Reads all available lines from CQP's stderr stream
-        """
+        """Read all available lines from CQP's stderr stream."""
         return os.read(self.errpipe, 16384)
 
     def Status(self):
-        """
-        Reads the CQP object's (error) status
-        """
+        """Read the CQP object's (error) status."""
         return self.status
 
     def Ok(self):
-        """
-        Simplified interface for checking for CQP errors
-        """
+        """Simplified interface for checking for CQP errors."""
         if self.CQPrunning:
             return (self.Status() == 'ok')
         else:
             return False
 
     def Error_message(self):
-        """
-        Returns the CQP error message
-        """
+        """Return the CQP error message."""
         if self.CQPrunning:
             return ErrCQP(self.error_message)
         else:
-            msgKilled = '**** CQP KILLED ***\n' + \
-                'CQP COULD NOT PROCESS YOUR REQUEST\n'
+            msgKilled = '**** CQP KILLED ***\n\
+            CQP COULD NOT PROCESS YOUR REQUEST\n'
             return ErrKilled(msgKilled + self.error_message)
 
     def Error(self, msg):
-        """
-        Processes/outputs error messages
+        """Processe/output error messages.
+
         (optionally run through user-defined error handler)
         """
-        if self.error_handler != None:
+        if self.error_handler is not None:
             self.error_handler(msg)
         else:
             print(msg, file=sys.stderr)
 
     def Set_error_handler(self, handler=None):
-        """
-        Sets user-defined error handler
-        """
+        """Set user-defined error handler."""
         self.error_handler = handler
 
     def Debug(self, on=False):
-        """
-        Switches debugging output on/off
-        """
+        """Switch debugging output on/off."""
         prev = self.debug
         self.debug = on
         return prev
