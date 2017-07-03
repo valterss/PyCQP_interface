@@ -25,9 +25,9 @@ import PyCQP_interface
 # name of the corpus to Query
 corpus_name = "EP-EN-TT"
 # path to your registry
-registry_dir='~/CORPORA/registry'
+registry_dir = "~/CORPORA/registry"
 # start a CQP session
-cqp=PyCQP_interface.CQP(bin='cqp',options='-c -r '+registry_dir)
+cqp=PyCQP_interface.CQP(bin='cqp', options='-c -r ' + registry_dir)
 # select the corpus
 cqp.Exec(corpus_name)
 # get all tokens in corpus
