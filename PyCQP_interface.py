@@ -220,18 +220,15 @@ class CQP:
         if first is None and last is None:
             result = self.Exec('dump ' + subcorpus + ";")
         elif ((not isinstance(first, int) and first is not None) or
-                (not isinstance(last, int) and last is not None)):
-            sys.stderr.write(
-                            "ERROR: Invalid value for first (" +
-                            str(first) + ") or last (" + str(last) +
-                            ") line in Dump() method\n")
+              (not isinstance(last, int) and last is not None)):
+            self.__logger.error("Invalid value for first (%s) or last (%s) line in Dump() method",
+                                first, last)
             sys.exit(1)
         elif isinstance(first, int) and isinstance(last, int):
             if first > last:
-                sys.stderr.write(
-                    "ERROR: Invalid value for first line (first = " +
-                    str(first) + " > last = " + str(last) +
-                    ") in Dump() method\n")
+                self.__logger.error(
+                    "Invalid value for first line (first = %s > last = %s) in Dump() method",
+                    first, last)
                 sys.exit(1)
             else:
                 result = self.Exec(
