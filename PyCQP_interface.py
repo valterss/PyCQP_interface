@@ -13,6 +13,7 @@ import random
 import time
 from six.moves import _thread as thread
 import tempfile
+import logging
 
 # Modules for running CQP as child process and pipe i/o
 # (standard in newer Python):
@@ -62,22 +63,21 @@ class CQP:
             if self.execStart is not None:
                 if time.time() - self.execStart > cMaxRequestProcTime *\
                  self.maxProcCycles:
-                    print(
-                        '''WARNING!: PROGRESS CONTROLLER IDENTIFIED BLOCKING CQP
-                        PROCESS ID {}'''.format(self.CQP_process.pid), end='')
+                    self.__logger.warning('PROGRESS CONTROLLER IDENTIFIED BLOCKING CQP PROCESS ID %d', self.CQP_process.pid)
                     # os.kill(self.CQP_process.pid, SIGKILL) - doesn't work!
                     os.popen("kill -9 " + str(self.CQP_process.pid))  # works!
-                    print("=> KILLED!")
+                    self.__logger.info("=> KILLED!")
                     self.CQPrunning = False
                     break
 
     def __init__(self, bin=None, options=''):
         """Class constructor."""
+        self.__logger = logging.getLogger(self.__class__.__name__)
         self.execStart = time.time()
         self.maxProcCycles = 1.0
         # start CQP as a child process of this wrapper
         if bin is None:
-            print("ERROR: Path to CQP binaries undefined", file=sys.stderr)
+            self.__logger.error("Path to CQP binaries undefined")
             sys.exit(1)
         self.CQP_process = subprocess.Popen(bin + ' ' + options,
                                             shell=True,
@@ -92,11 +92,11 @@ class CQP:
         version_string = self.CQP_process.stdout.readline()
         version_string = version_string.rstrip()  # Equivalent to Perl's chomp
         self.CQP_process.stdout.flush()
-        print(version_string, file=sys.stderr)
+        self.__logger.info("Test " + version_string)
         version_regexp = re.compile(r'^CQP\s+(?:\w+\s+)*([0-9]+)\.([0-9]+)(?:\.b?([0-9]+))?(?:\s+(.*))?$')
         match = version_regexp.match(version_string)
         if not match:
-            print("ERROR: CQP backend startup failed", file=sys.stderr)
+            self.__logger.error("CQP backend startup failed")
             sys.exit(1)
         self.major_version = int(match.group(1))
         self.minor_version = int(match.group(2))
@@ -110,9 +110,7 @@ class CQP:
                     self.minor_version == 2 and
                     self.beta_version >= 41)
                 ):
-            print(
-                "ERROR: CQP version too old: " + version_string,
-                file=sys.stderr)
+            self.__logger.error("CQP version too old: %s", version_string)
             sys.exit(1)
 
         # Error handling:
@@ -120,9 +118,6 @@ class CQP:
         self.status = 'ok'
         self.error_message = ''  # we store compound error messages as a STRING
         self.errpipe = self.CQP_process.stderr.fileno()
-
-        # Debugging (prints more or less everything on stdout)
-        self.debug = False
 
         # CQP defaults:
         self.Exec('set PrettyPrint off')
@@ -135,23 +130,22 @@ class CQP:
 
     def SetProcCycles(self, procCycles):
         """Set procCycles."""
-        print("    Setting procCycles to {}".format(procCycles))
+        self.__logger("Setting procCycles to %d", procCycles)
         self.maxProcCycles = procCycles
         return int(self.maxProcCycles * cMaxRequestProcTime)
 
     def __del__(self):
+        self.exit_cqp()
+
+    def exit_cqp(self):
         """Stop running CQP instance."""
+        self.Terminate()
         if self.CQPrunning:
-            # print "Deleting CQP with pid", self.CQP_process.pid, "...",
             self.CQPrunning = False
             self.execStart = time.time()
-            if self.debug:
-                print("Shutting down CQP backend ...", end='')
-            self.CQP_process.stdin.write('exit;')  # exits CQP backend
-            if self.debug:
-                print("Done\nCQP object deleted.")
+            self.__logger.debug("Shutting down CQP backend (pid: %d)...", self.CQP_process.pid)
+            self.__logger.debug("Done - CQP object deleted.")
             self.execStart = None
-            # print "Finished"
 
     def Exec(self, cmd):
         """Execute CQP command.
@@ -163,8 +157,7 @@ class CQP:
         self.status = 'ok'
         cmd = cmd.rstrip()  # Equivalent to Perl's 'chomp'
         cmd = re.sub(r';\s*$', r'', cmd)
-        if self.debug:
-            print("CQP <<", cmd + ";")
+        self.__logger.debug("CQP <<%s;", cmd)
         try:
             self.CQP_process.stdin.write(cmd + '; .EOL.;\n')
         except IOError:
@@ -183,11 +176,9 @@ class CQP:
             ln = self.CQP_process.stdout.readline()
             ln = ln.strip()  # strip off whitespace from start and end of line
             if re.match(r'-::-EOL-::-', ln):
-                if self.debug:
-                    print("CQP " + "-" * 60)
+                self.__logger.debug("CQP " + "-" * 60)
                 break
-            if self.debug:
-                print("CQP >> " + ln)
+            self.__logger.debug("CQP >> %s", ln)
             if ln != '':
                 result.append(ln)
             self.CQP_process.stdout.flush()
@@ -279,20 +270,18 @@ class CQP:
             if n_el is None:
                 n_el = row_el
                 if (n_el < 2) or (n_el > 4):
-                    print(
-                        "ERROR: Row arrays in undump table must have " +
-                        "between 2 and 4 elements (first row has " +
-                        str(n_el) + " elements)", file=sys.stderr)
+                    self.__logger.error(
+                        "Row arrays in undump table must have " +
+                        "between 2 and 4 elements (first row has %s elements)", n_el)
                     sys.exit(1)
                 if n_el >= 3:
                     wth = 'with target'
                 if n_el == 4:
                     wth = wth + ' keyword'
             elif row_el != n_el:
-                print(
+                self.__logger.error(
                     "ERROR: All rows in undump table must have the same " +
-                    "length (first row = " + str(n_el) + ", this row = " +
-                    str(row_el) + ")", file=sys.stderr)
+                    "length (first row = %s, this row = %s)", n_el, row_el)
                 sys.exit(1)
             tf.write('\t'.join(row) + '\n')
         tf.close()
@@ -318,17 +307,13 @@ class CQP:
           r'^(match|matchend|target[0-9]?|keyword)\.([A-Za-z0-9_-]+)$')
         match = re.match(spec_regexp, spec1)
         if not match:
-            print(
-                "ERROR: Invalid key '" + spec1 + "' in Group() method",
-                file=sys.stderr)
+            self.__logger.error("Invalid key '%s' in Group() method", spec1)
             sys.exit(1)
         spec1 = match.group(1) + ' ' + match.group(2)
         if spec2 != '':
             match = re.match(spec_regexp, spec2)
             if not match:
-                print(
-                    "ERROR: Invalid key '" + spec2 + "' in Group() method",
-                    file=sys.stderr)
+                self.__logger.error("Invalid key '%s' in Group() method", spec2)
                 sys.exit(1)
             spec2 = match.group(1) + ' ' + match.group(2)
             cmd = 'group ' + subcorpus + ' ' + spec2 + ' by ' + spec1 + \
@@ -344,9 +329,7 @@ class CQP:
         Based on sort clause.
         """
         if sort_clause is None:
-            print(
-                "ERROR: Parameter 'sort_clause' undefined in Count() method",
-                file=sys.stderr)
+            self.__logger.error("Parameter 'sort_clause' undefined in Count() method")
             sys.exit(1)
         return self.Exec(
             'count ' +
@@ -403,14 +386,8 @@ class CQP:
         if self.error_handler is not None:
             self.error_handler(msg)
         else:
-            print(msg, file=sys.stderr)
+            self.__logger.info(msg)
 
     def Set_error_handler(self, handler=None):
         """Set user-defined error handler."""
         self.error_handler = handler
-
-    def Debug(self, on=False):
-        """Switch debugging output on/off."""
-        prev = self.debug
-        self.debug = on
-        return prev
