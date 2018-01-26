@@ -105,12 +105,10 @@ class CQP:
         self.compile_date = match.group(4)
 
         # We need cqp-2.2.b41 or newer (for query lock):
-        if not (
-                self.major_version >= 3 or
+        if not (self.major_version >= 3 or
                 (self.major_version == 2 and
-                    self.minor_version == 2 and
-                    self.beta_version >= 41)
-                ):
+                 self.minor_version == 2 and
+                 self.beta_version >= 41)):
             self.__logger.error("CQP version too old: %s", version_string)
             sys.exit(1)
 
@@ -131,7 +129,7 @@ class CQP:
 
     def SetProcCycles(self, procCycles):
         """Set procCycles."""
-        self.__logger("Setting procCycles to %d", procCycles)
+        self.__logger.info("Setting procCycles to %d", procCycles)
         self.maxProcCycles = procCycles
         return int(self.maxProcCycles * cMaxRequestProcTime)
 
@@ -146,7 +144,6 @@ class CQP:
             self.execStart = time.time()
             self.__logger.debug("Shutting down CQP backend (pid: %d)...", self.CQP_process.pid)
             #self.CQP_process.stdin.write('exit;')  # exits CQP backend
-            # Kill the process as `exit` command does not allways exits the process
             self.CQP_process.kill()
             self.__logger.debug("Done - CQP object deleted.")
             self.execStart = None
@@ -292,7 +289,6 @@ class CQP:
         # Send undump command with filename of temporary file:
         self.Exec("undump " + subcorpus + " " + wth + " < '" + filename + "'")
         tf.delete()
-        pass
 
     def Group(self, subcorpus='Last',
               spec1='match.word', spec2='', cutoff='1'):
@@ -369,7 +365,7 @@ class CQP:
     def Ok(self):
         """Simplified interface for checking for CQP errors."""
         if self.CQPrunning:
-            return (self.Status() == 'ok')
+            return self.Status() == 'ok'
         else:
             return False
 
