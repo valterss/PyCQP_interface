@@ -65,7 +65,8 @@ class CQP:
                  self.maxProcCycles:
                     self.__logger.warning('PROGRESS CONTROLLER IDENTIFIED BLOCKING CQP PROCESS ID %d', self.CQP_process.pid)
                     # os.kill(self.CQP_process.pid, SIGKILL) - doesn't work!
-                    os.popen("kill -9 " + str(self.CQP_process.pid))  # works!
+                    # os.popen("kill -9 " + str(self.CQP_process.pid))  # works!
+                    self.CQP_process.kill()
                     self.__logger.info("=> KILLED!")
                     self.CQPrunning = False
                     break
@@ -144,6 +145,9 @@ class CQP:
             self.CQPrunning = False
             self.execStart = time.time()
             self.__logger.debug("Shutting down CQP backend (pid: %d)...", self.CQP_process.pid)
+            #self.CQP_process.stdin.write('exit;')  # exits CQP backend
+            # Kill the process as `exit` command does not allways exits the process
+            self.CQP_process.kill()
             self.__logger.debug("Done - CQP object deleted.")
             self.execStart = None
 
